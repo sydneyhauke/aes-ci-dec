@@ -1,7 +1,7 @@
 CC=gcc
 
-CFLAGS= -O2 -std=c11 -Wall
-LDFLAGS=-I$(INCL_FOLDER)
+CFLAGS= -O2 -std=c11 -Wall -I$(INCL_FOLDER)/
+LDFLAGS=-I$(INCL_FOLDER)/
 
 SRC_FOLDER=src
 INCL_FOLDER=include
