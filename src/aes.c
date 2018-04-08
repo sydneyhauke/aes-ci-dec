@@ -241,29 +241,57 @@ int
 aes_cipher(enum AES_VERSION v,
            const uint8_t *aes_cipher_key,
            const uint8_t *plaintext,
-           size_t len,
-           uint8_t *ciphertext)
+           size_t plain_len,
+           uint8_t *ciphertext,
+           size_t cipher_len)
 {
-  uint8_t *key_expansions;
+    if(cipher_len % STATE_SIZE != 0 || cipher_len < plain_len) {
+        fprintf(stderr,
+                "Ciphertext buffer has incorrect size : %ld bytes",
+                cipher_len);
+        return -EINVAL;
+    }
 
-  key_expansions(v, &key_expansions, aes_cipher_key);
+    uint8_t *key_expansions;
 
-  uint8_t n;
-  switch v {
-    case AES128:
-      n = ROUND_KEYS_AES128;
-      break;
-    case AES192:
-      n = ROUND_KEYS_AES192;
-      break;
-    case AES256:
-      n = ROUND_KEYS_AES256;
-      break;
-    default:
-      fprintf(stderr, "%s\n", "Unrecognized AES version");
-      exit(EXIT_FAILURE);
-      break;
-  }
+    key_expansions(v, &key_expansions, aes_cipher_key);
 
-  return 0;
+    uint8_t n;
+    switch v {
+        case AES128:
+        n = ROUND_KEYS_AES128;
+        break;
+        case AES192:
+        n = ROUND_KEYS_AES192;
+        break;
+        case AES256:
+        n = ROUND_KEYS_AES256;
+        break;
+        default:
+        fprintf(stderr, "%s\n", "Unrecognized AES version");
+        exit(EXIT_FAILURE);
+        break;
+    }
+
+    size_t n_blocks = plain_len / STATE_SIZE;
+
+    for(size_t i = 0; i < n_blocks; i++) {
+        do_block128(uint8_t n,
+                    key_expansions,
+                    plaintext + (i * STATE_SIZE),
+                    ciphertext + (i * STATE_SIZE));
+    }
+
+    /* Do last block */
+    size_t block_rest = plain_len % STATE_SIZE;
+    memset(plaintext + plain_len, 0, block_rest);
+
+    do_block128(uint8_t n,
+                key_expansions,
+                plaintext + (n_blocks * STATE_SIZE),
+                ciphertext + (n_blocks * STATE_SIZE));
+
+    free(key_expansions);
+
+    return 0;
 }

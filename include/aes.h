@@ -33,6 +33,12 @@ shift_rows(uint8_t *state);
 static void
 mix_columns(uint8_t *col);
 
+static void
+do_block128(uint8_t n_rounds,
+            const uint8_t *key_expansions,
+            const uint8_t *plaintext,
+            uint8_t *ciphertext);
+
 int aes_cipher(enum AES_VERSION v,
                const uint8_t *aes_cipher_key,
                uint8_t *plaintext,
