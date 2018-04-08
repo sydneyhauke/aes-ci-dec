@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
-unsigned char s_box[256] =
+static unsigned char s_box[256] =
 {
    0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5, 0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76,
    0xCA, 0x82, 0xC9, 0x7D, 0xFA, 0x59, 0x47, 0xF0, 0xAD, 0xD4, 0xA2, 0xAF, 0x9C, 0xA4, 0x72, 0xC0,
@@ -24,7 +24,7 @@ unsigned char s_box[256] =
    0x8C, 0xA1, 0x89, 0x0D, 0xBF, 0xE6, 0x42, 0x68, 0x41, 0x99, 0x2D, 0x0F, 0xB0, 0x54, 0xBB, 0x16
 };
 
-unsigned char rcon[256] = {
+static unsigned char rcon[256] = {
     0x8d, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36, 0x6c, 0xd8, 0xab, 0x4d, 0x9a,
     0x2f, 0x5e, 0xbc, 0x63, 0xc6, 0x97, 0x35, 0x6a, 0xd4, 0xb3, 0x7d, 0xfa, 0xef, 0xc5, 0x91, 0x39,
     0x72, 0xe4, 0xd3, 0xbd, 0x61, 0xc2, 0x9f, 0x25, 0x4a, 0x94, 0x33, 0x66, 0xcc, 0x83, 0x1d, 0x3a,
@@ -43,7 +43,7 @@ unsigned char rcon[256] = {
     0x61, 0xc2, 0x9f, 0x25, 0x4a, 0x94, 0x33, 0x66, 0xcc, 0x83, 0x1d, 0x3a, 0x74, 0xe8, 0xcb, 0x8d
 };
 
-void
+static void
 key_expansions(enum AES_VERSION v, uint8_t **expended_key, const uint8_t *aes_cipher_key)
 {
     uint8_t b,n;
@@ -150,22 +150,22 @@ key_expansions(enum AES_VERSION v, uint8_t **expended_key, const uint8_t *aes_ci
     }
 }
 
-void
-addRoundKey(const uint8_t *roundKey, uint8_t *state)
+static void
+add_round_key(const uint8_t *roundKey, uint8_t *state)
 {
     for(size_t i = 0; i < ROUND_KEY_SIZE; i++) {
         state[i] ^= roundKey[i];
     }
 }
 
-void
+static void
 sub_bytes(uint8_t *state) {
     for(size_t i = 0; i < STATE_SIZE; i++) {
         state[i] = s_box[state[i]];
     }
 }
 
-void
+static void
 shift_rows(uint8_t *state) {
     /* First row is untouched */
     uint32_t tword;
@@ -183,7 +183,87 @@ shift_rows(uint8_t *state) {
     }
 }
 
-void
-mix_columns(uint8_t *state) {
+/* Source : https://en.wikipedia.org/wiki/Rijndael_MixColumns */
+static void
+mix_columns(uint8_t *col)
+{
+  uint8_t a[4];
+  uint8_t b[4];
+  uint8_t c;
+  uint8_t h;
 
+  /* The array 'a' is simply a copy of the input array 'r'
+   * The array 'b' is each element of the array 'a' multiplied by 2
+   * in Rijndael's Galois field
+   * a[n] ^ b[n] is element n multiplied by 3 in Rijndael's Galois field */
+
+  for (c = 0; c < 4; c++) {
+      a[c] = col[c];
+      /* h is 0xff if the high bit of r[c] is set, 0 otherwise */
+      h = (uint8_t)((int8_t)col[c] >> 7); /* arithmetic right shift, thus shifting in either zeros or ones */
+      b[c] = col[c] << 1; /* implicitly removes high bit because b[c] is an 8-bit char, so we xor by 0x1b and not 0x11b in the next line */
+      b[c] ^= 0x1B & h; /* Rijndael's Galois field */
+  }
+
+  col[0] = b[0] ^ a[3] ^ a[2] ^ b[1] ^ a[1]; /* 2 * a0 + a3 + a2 + 3 * a1 */
+  col[1] = b[1] ^ a[0] ^ a[3] ^ b[2] ^ a[2]; /* 2 * a1 + a0 + a3 + 3 * a2 */
+  col[2] = b[2] ^ a[1] ^ a[0] ^ b[3] ^ a[3]; /* 2 * a2 + a1 + a0 + 3 * a3 */
+  col[3] = b[3] ^ a[2] ^ a[1] ^ b[0] ^ a[0]; /* 2 * a3 + a2 + a1 + 3 * a0 */
+}
+
+static void
+do_block128(uint8_t n_rounds,
+            const uint8_t *key_expansions,
+            const uint8_t *plaintext,
+            uint8_t *ciphertext)
+{
+    /* Cipther text is the state now */
+    memcpy(ciphertext, plaintext, STATE_SIZE);
+
+    /* First round */
+    add_round_key(key_expansions + ROUND_KEY_SIZE * 0, ciphertext);
+
+    /* N rounds */
+    for(uint8_t i = 0; i < n_rounds; i++) {
+      sub_bytes(ciphertext);
+      shift_rows(ciphertext);
+      /* TODO : Mix columns to be integrated */
+      add_round_key(key_expansions + (i+1) * ROUND_KEY_SIZE, ciphertext);
+    }
+
+    /* Final round */
+    sub_bytes(ciphertext);
+    shift_rows(ciphertext);
+    add_round_key(key_expansions + (n_rounds+1) * ROUND_KEY_SIZE, ciphertext);
+}
+
+int
+aes_cipher(enum AES_VERSION v,
+           const uint8_t *aes_cipher_key,
+           const uint8_t *plaintext,
+           size_t len,
+           uint8_t *ciphertext)
+{
+  uint8_t *key_expansions;
+
+  key_expansions(v, &key_expansions, aes_cipher_key);
+
+  uint8_t n;
+  switch v {
+    case AES128:
+      n = ROUND_KEYS_AES128;
+      break;
+    case AES192:
+      n = ROUND_KEYS_AES192;
+      break;
+    case AES256:
+      n = ROUND_KEYS_AES256;
+      break;
+    default:
+      fprintf(stderr, "%s\n", "Unrecognized AES version");
+      exit(EXIT_FAILURE);
+      break;
+  }
+
+  return 0;
 }

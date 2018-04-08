@@ -16,20 +16,27 @@ enum AES_VERSION {
     AES256
 };
 
-void
-key_expansions(enum AES_VERSION v, uint8_t **expendend_key, const uint8_t *aes_cipher_key);
+static void
+key_expansions(enum AES_VERSION v,
+               uint8_t **expendend_key,
+               const uint8_t *aes_cipher_key);
 
-void
+static void
 add_round_key(const uint8_t *roundkey, uint8_t *state);
 
-void
+static void
 sub_bytes(uint8_t *state);
 
-void
+static void
 shift_rows(uint8_t *state);
 
-void
-mix_columns(uint8_t *state);
+static void
+mix_columns(uint8_t *col);
 
+int aes_cipher(enum AES_VERSION v,
+               const uint8_t *aes_cipher_key,
+               uint8_t *plaintext,
+               size_t len,
+               uint8_t *ciphertext);
 
 #endif
